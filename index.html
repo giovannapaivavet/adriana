@@ -1,26 +1,556 @@
-
-<!doctype html>
+<!DOCTYPE html>
 <html lang="pt-BR">
-	<head>
-		<meta charset="UTF-8" />
-		<link rel="icon" type="image/svg+xml" href="/vite.svg" />
-		<meta name="generator" content="Hostinger Horizons" />
-		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		
-		<meta name="theme-color" content="#8A2BE2" />
-		<meta name="description" content="AP-09 - Seu assistente financeiro pessoal inteligente." />
-		
-		<link rel="manifest" href="/manifest.json" />
-		
-		<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-		<meta name="apple-mobile-web-app-capable" content="yes" />
-		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-		<meta name="apple-mobile-web-app-title" content="AP-09" />
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Simulador e Projeção de NPS</title>
+  <!-- Carrega o Tailwind CSS para o estilo -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Carrega React, ReactDOM e PropTypes (uma nova adição necessária) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!--
+    Adicionado explicitamente o PropTypes. A versão 18 do React já não o inclui
+    diretamente no bundle do ReactDOM, mas bibliotecas como o Recharts ainda
+    dependem dele.
+  -->
+  <script crossorigin src="https://unpkg.com/prop-types@15.8.1/prop-types.js"></script>
+  <!-- Carrega Babel para transformar o JSX -->
+  <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!--
+    Corrigido o erro do Recharts. A versão 2.8.0 é usada para garantir a
+    compatibilidade com a versão 18 do React, que estava causando o erro de
+    tipo e a referência indefinida.
+  -->
+  <script crossorigin src="https://unpkg.com/recharts@2.8.0/umd/Recharts.js"></script>
+  <style>
+    /* Estilo para a fonte "Inter" */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 p-4 md:p-8">
+  <div id="root"></div>
 
-		<title>AP-09 - Finanças Pessoais</title>
-	</head>
-	<body>
-		<div id="root"></div>
-		<script type="module" src="/src/main.jsx"></script>
-	</body>
+  <script type="text/babel">
+    // Espera que todos os scripts e o DOM estejam carregados antes de iniciar a aplicação React
+    window.onload = function() {
+      const { useState, useMemo } = React;
+      // As componentes Recharts são desestruturadas aqui dentro do onLOAD,
+      // garantindo que o objeto global 'Recharts' já está definido e disponível.
+      const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } = Recharts;
+
+      // Componentes recriados do shadcn para evitar erros de importação
+      const Card = ({ children, className }) => (
+        <div className={`rounded-xl border bg-card text-card-foreground shadow ${className}`}>
+          {children}
+        </div>
+      );
+
+      const CardHeader = ({ children, className }) => (
+        <div className={`flex flex-col space-y-1.5 p-6 ${className}`}>
+          {children}
+        </div>
+      );
+
+      const CardTitle = ({ children, className }) => (
+        <h3 className={`font-semibold tracking-tight text-2xl ${className}`}>
+          {children}
+        </h3>
+      );
+
+      const CardDescription = ({ children, className }) => (
+        <p className={`text-sm text-muted-foreground ${className}`}>
+          {children}
+        </p>
+      );
+
+      const CardContent = ({ children, className }) => (
+        <div className={`p-6 pt-0 ${className}`}>
+          {children}
+        </div>
+      );
+
+      const Button = ({ children, className, onClick }) => (
+        <button
+          className={`inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-9 px-4 py-2 ${className}`}
+          onClick={onClick}
+        >
+          {children}
+        </button>
+      );
+
+      const Input = ({ className, type, value, onChange, ...props }) => (
+        <input
+          type={type}
+          value={value}
+          onChange={onChange}
+          className={`flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+          {...props}
+        />
+      );
+
+      const Label = ({ children, className, htmlFor }) => (
+        <label
+          htmlFor={htmlFor}
+          className={`text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${className}`}
+        >
+          {children}
+        </label>
+      );
+
+      const Tabs = ({ children, defaultValue }) => {
+        const [activeTab, setActiveTab] = useState(defaultValue);
+        return (
+          <div className="flex flex-col">
+            {React.Children.map(children, child =>
+              React.cloneElement(child, { activeTab, setActiveTab })
+            )}
+          </div>
+        );
+      };
+
+      const TabsList = ({ children, className, activeTab, setActiveTab }) => (
+        <div className={`inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground ${className}`}>
+          {React.Children.map(children, child =>
+            React.cloneElement(child, { activeTab, setActiveTab })
+          )}
+        </div>
+      );
+
+      const TabsTrigger = ({ children, value, className, activeTab, setActiveTab }) => (
+        <button
+          className={`inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 ${
+            activeTab === value ? 'bg-background text-foreground shadow' : ''
+          } ${className}`}
+          onClick={() => setActiveTab(value)}
+        >
+          {children}
+        </button>
+      );
+
+      const TabsContent = ({ children, value, className, activeTab }) => (
+        <div className={`mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+          activeTab === value ? '' : 'hidden'
+        } ${className}`}>
+          {children}
+        </div>
+      );
+
+      // O componente App é o container principal da nossa aplicação
+      const App = () => {
+        // Dados iniciais com base na imagem fornecida, apenas até Julho
+        const initialData = [
+          {
+            month: 'Jan',
+            volVoz: 428, promVoz: 405, neutrVoz: 16, detraVoz: 7,
+            volWhats: 637, promWhats: 568, neutrWhats: 36, detraWhats: 33
+          },
+          {
+            month: 'Fev',
+            volVoz: 776, promVoz: 742, neutrVoz: 24, detraVoz: 10,
+            volWhats: 647, promWhats: 592, neutrWhats: 37, detraWhats: 18
+          },
+          {
+            month: 'Mar',
+            volVoz: 294, promVoz: 274, neutrVoz: 16, detraVoz: 4,
+            volWhats: 1086, promWhats: 969, neutrWhats: 70, detraWhats: 47
+          },
+          {
+            month: 'Abr',
+            volVoz: 584, promVoz: 561, neutrVoz: 21, detraVoz: 2,
+            volWhats: 921, promWhats: 835, neutrWhats: 41, detraWhats: 45
+          },
+          {
+            month: 'Mai',
+            volVoz: 682, promVoz: 661, neutrVoz: 15, detraVoz: 6,
+            volWhats: 822, promWhats: 751, neutrWhats: 33, detraWhats: 38
+          },
+          {
+            month: 'Jun',
+            volVoz: 767, promVoz: 733, neutrVoz: 21, detraVoz: 13,
+            volWhats: 272, promWhats: 242, neutrWhats: 17, detraWhats: 13
+          },
+          {
+            month: 'Jul',
+            volVoz: 802, promVoz: 782, neutrVoz: 18, detraVoz: 2,
+            volWhats: 227, promWhats: 208, neutrWhats: 8, detraWhats: 11
+          }
+        ];
+
+        // Mapeia os meses até Dezembro para a tabela
+        const allMonths = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
+        // Projeção automática para meses não preenchidos
+        const projectionData = useMemo(() => {
+          // Calcula a média dos últimos 4 meses de dados existentes (Abril a Julho)
+          const lastFourMonths = initialData.slice(-4);
+          const avgData = lastFourMonths.reduce((acc, curr) => {
+            acc.promVoz += curr.promVoz;
+            acc.neutrVoz += curr.neutrVoz;
+            acc.detraVoz += curr.detraVoz;
+            acc.promWhats += curr.promWhats;
+            acc.neutrWhats += curr.neutrWhats;
+            acc.detraWhats += curr.detraWhats;
+            return acc;
+          }, { promVoz: 0, neutrVoz: 0, detraVoz: 0, promWhats: 0, neutrWhats: 0, detraWhats: 0 });
+
+          const avgPromVoz = Math.round(avgData.promVoz / lastFourMonths.length);
+          const avgNeutrVoz = Math.round(avgData.neutrVoz / lastFourMonths.length);
+          const avgDetraVoz = Math.round(avgData.detraVoz / lastFourMonths.length);
+          const avgPromWhats = Math.round(avgData.promWhats / lastFourMonths.length);
+          const avgNeutrWhats = Math.round(avgData.neutrWhats / lastFourMonths.length);
+          const avgDetraWhats = Math.round(avgData.detraWhats / lastFourMonths.length);
+
+          // Preenche os meses restantes com a projeção
+          const fullData = [...initialData];
+          for (let i = initialData.length; i < allMonths.length; i++) {
+            const volVoz = avgPromVoz + avgNeutrVoz + avgDetraVoz;
+            const volWhats = avgPromWhats + avgNeutrWhats + avgDetraWhats;
+            fullData.push({
+              month: allMonths[i],
+              volVoz,
+              promVoz: avgPromVoz,
+              neutrVoz: avgNeutrVoz,
+              detraVoz: avgDetraVoz,
+              volWhats,
+              promWhats: avgPromWhats,
+              neutrWhats: avgNeutrWhats,
+              detraWhats: avgDetraWhats,
+              isProjected: true, // Marca como dado projetado
+            });
+          }
+          return fullData;
+        }, []);
+
+        // Estado para armazenar os dados do simulador, inicializado com a projeção
+        const [data, setData] = useState(projectionData);
+        // Estado para armazenar o volume total de notas para o cálculo inverso
+        const [totalNotas, setTotalNotas] = useState(1000);
+        const [inverseResults, setInverseResults] = useState([]);
+
+        // Função para calcular o NPS de um canal
+        const calculateNps = (promoters, detractors, total) => {
+          if (total === 0) return 0;
+          return parseFloat(((promoters - detractors) / total) * 100).toFixed(1);
+        };
+
+        // Função para calcular o NPS CX combinando os canais
+        const calculateNpsCx = (vozData, whatsData) => {
+          const totalNotas = (vozData.promVoz + vozData.neutrVoz + vozData.detraVoz) +
+                           (whatsData.promWhats + whatsData.neutrWhats + whatsData.detraWhats);
+          const totalPromotores = vozData.promVoz + whatsData.promWhats;
+          const totalDetratores = vozData.detraVoz + whatsData.detraWhats;
+          return calculateNps(totalPromotores, totalDetratores, totalNotas);
+        };
+
+        // Projeção do NPS CX com base nos dados
+        const npsProjectionData = useMemo(() => {
+          return data.map(monthData => ({
+            ...monthData,
+            npsCx: calculateNpsCx(
+              { promVoz: monthData.promVoz, detrVoz: monthData.detraVoz, neutrVoz: monthData.neutrVoz },
+              { promWhats: monthData.promWhats, detraWhats: monthData.detraWhats, neutrWhats: monthData.neutrWhats }
+            )
+          }));
+        }, [data]);
+
+        // Dados consolidados para a nova tabela
+        const combinedMetrics = useMemo(() => {
+          return data.map(monthData => {
+            const totalPromoters = monthData.promVoz + monthData.promWhats;
+            const totalNeutrals = monthData.neutrVoz + monthData.neutrWhats;
+            const totalDetractors = monthData.detraVoz + monthData.detraWhats;
+            const totalVolume = totalPromoters + totalNeutrals + totalDetractors;
+            const nps = calculateNps(totalPromoters, totalDetractors, totalVolume);
+            return {
+              month: monthData.month,
+              totalPromoters,
+              totalNeutrals,
+              totalDetractors,
+              totalVolume,
+              nps
+            };
+          });
+        }, [data]);
+
+        // Handle de alteração nos inputs da projeção
+        const handleProjectionChange = (index, channel, type, value) => {
+          const newData = [...data];
+          newData[index][`${type}${channel}`] = parseInt(value, 10) || 0;
+          newData[index][`vol${channel}`] = newData[index][`prom${channel}`] + newData[index][`neutr${channel}`] + newData[index][`detra${channel}`];
+          setData(newData);
+        };
+
+        // Handle de cálculo do NPS inverso
+        const handleInverseCalculation = () => {
+          const targetNps = 95;
+          const results = [];
+          
+          // Lógica do cálculo inverso: Fixamos uma proporção para neutros e resolvemos o sistema
+          // Assumimos que os neutros representam uma média histórica,
+          // que pode ser calculada a partir dos dados iniciais reais (até Julho).
+          const initialTotalNotes = initialData.reduce((sum, d) => sum + d.volVoz + d.volWhats, 0);
+          const initialTotalNeutrals = initialData.reduce((sum, d) => sum + d.neutrVoz + d.neutrWhats, 0);
+          const neutralRatio = initialTotalNeutrals / initialTotalNotes;
+
+          for (let i = 0; i < 12; i++) {
+            const notes = totalNotas; // Usa o totalNotas do estado
+            const neutrals = Math.round(notes * neutralRatio);
+
+            // Usando a fórmula NPS = (Promotores - Detratores) / Total * 100
+            // 95 = (Promotores - Detratores) / notes * 100 => Promotores - Detratores = 0.95 * notes
+            // Sabemos que Promotores + Detratores + Neutros = notes
+            // Promotores + Detratores = notes - neutrals
+            // Resolvemos o sistema de equações lineares:
+            // P - D = 0.95 * notes
+            // P + D = notes - neutrals
+            const equation1 = (targetNps / 100) * notes;
+            const equation2 = notes - neutrals;
+
+            const promoters = Math.round((equation1 + equation2) / 2);
+            const detractors = Math.round((equation2 - equation1) / 2);
+
+            results.push({
+              month: allMonths[i],
+              totalNotas: notes,
+              promotores: promoters,
+              detratores: detractors,
+              neutros: neutrals,
+              npsCalculado: calculateNps(promoters, detractors, notes),
+            });
+          }
+          setInverseResults(results);
+        };
+
+        return (
+          <div className="p-4 md:p-8 bg-gray-100 min-h-screen font-sans">
+            <Card className="max-w-7xl mx-auto rounded-xl shadow-lg">
+              <CardHeader className="bg-red-800 text-white rounded-t-xl p-6">
+                <CardTitle className="text-3xl font-bold">Simulador e Projeção de NPS</CardTitle>
+                <CardDescription className="text-red-100 text-lg">
+                  Ferramenta interativa para simular cenários e calcular metas de NPS.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-6">
+                <Tabs defaultValue="projection">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="projection">Projeção de NPS</TabsTrigger>
+                    <TabsTrigger value="inverse">Cálculo Inverso (Meta NPS 95)</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="projection" className="mt-4">
+                    <h3 className="text-2xl font-semibold mb-4 text-gray-800">Projeção de NPS por Canal</h3>
+                    <p className="text-gray-600 mb-6">
+                      Ajuste os volumes de promotores, detratores e neutros para cada canal e veja a projeção do NPS CX.
+                      Os meses sem dados iniciais foram preenchidos com uma projeção automática.
+                    </p>
+                    <div className="overflow-x-auto mb-6">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-red-700 text-white">
+                            <th className="p-3 border-r">Mês</th>
+                            <th className="p-3 border-r text-center" colSpan="4">Voz</th>
+                            <th className="p-3 text-center" colSpan="4">Whats</th>
+                          </tr>
+                          <tr className="bg-red-600 text-white">
+                            <th className="p-3 border-r"></th>
+                            <th className="p-3">Promotores</th>
+                            <th className="p-3">Neutros</th>
+                            <th className="p-3">Detratores</th>
+                            <th className="p-3 border-r">Vol. Total</th>
+                            <th className="p-3">Promotores</th>
+                            <th className="p-3">Neutros</th>
+                            <th className="p-3">Detratores</th>
+                            <th className="p-3">Vol. Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.map((monthData, index) => (
+                            <tr key={index} className={`border-b ${monthData.isProjected ? 'bg-red-50' : 'hover:bg-gray-50'}`}>
+                              <td className="p-3 font-medium border-r">{monthData.month}</td>
+                              <td className="p-3">
+                                <Input
+                                  type="number"
+                                  value={monthData.promVoz}
+                                  onChange={(e) => handleProjectionChange(index, 'Voz', 'prom', e.target.value)}
+                                  className="w-full text-center"
+                                />
+                              </td>
+                              <td className="p-3">
+                                <Input
+                                  type="number"
+                                  value={monthData.neutrVoz}
+                                  onChange={(e) => handleProjectionChange(index, 'Voz', 'neutr', e.target.value)}
+                                  className="w-full text-center"
+                                />
+                              </td>
+                              <td className="p-3">
+                                <Input
+                                  type="number"
+                                  value={monthData.detraVoz}
+                                  onChange={(e) => handleProjectionChange(index, 'Voz', 'detra', e.target.value)}
+                                  className="w-full text-center"
+                                />
+                              </td>
+                              <td className="p-3 border-r font-bold text-gray-600 text-center">{monthData.volVoz}</td>
+                              <td className="p-3">
+                                <Input
+                                  type="number"
+                                  value={monthData.promWhats}
+                                  onChange={(e) => handleProjectionChange(index, 'Whats', 'prom', e.target.value)}
+                                  className="w-full text-center"
+                                />
+                              </td>
+                              <td className="p-3">
+                                <Input
+                                  type="number"
+                                  value={monthData.neutrWhats}
+                                  onChange={(e) => handleProjectionChange(index, 'Whats', 'neutr', e.target.value)}
+                                  className="w-full text-center"
+                                />
+                              </td>
+                              <td className="p-3">
+                                <Input
+                                  type="number"
+                                  value={monthData.detraWhats}
+                                  onChange={(e) => handleProjectionChange(index, 'Whats', 'detra', e.target.value)}
+                                  className="w-full text-center"
+                                />
+                              </td>
+                              <td className="p-3 font-bold text-gray-600 text-center">{monthData.volWhats}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <Card className="bg-red-50 border-red-200 mt-8">
+                      <CardHeader>
+                        <CardTitle className="text-xl">Resumo Consolidado dos Canais</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="bg-red-300 text-gray-800">
+                                <th className="p-3">Mês</th>
+                                <th className="p-3">Promotores</th>
+                                <th className="p-3">Neutros</th>
+                                <th className="p-3">Detratores</th>
+                                <th className="p-3">Vol. Total</th>
+                                <th className="p-3">NPS CX</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {combinedMetrics.map((result, index) => (
+                                <tr key={index} className="border-b hover:bg-red-100">
+                                  <td className="p-3 font-medium">{result.month}</td>
+                                  <td className="p-3">{result.totalPromoters}</td>
+                                  <td className="p-3">{result.totalNeutrals}</td>
+                                  <td className="p-3">{result.totalDetractors}</td>
+                                  <td className="p-3">{result.totalVolume}</td>
+                                  <td className="p-3 font-bold text-red-800">{result.nps}%</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </CardContent>
+                    </Card>
+                    <Card className="bg-red-50 border-red-200 mt-8">
+                      <CardHeader>
+                        <CardTitle className="text-xl">Projeção do NPS CX</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <ResponsiveContainer width="100%" height={300}>
+                          <LineChart data={npsProjectionData} margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                            <XAxis dataKey="month" />
+                            <YAxis domain={[0, 100]} />
+                            <Tooltip />
+                            <Legend />
+                            <Line type="monotone" dataKey="npsCx" name="NPS CX Projetado" stroke="#a51f38" strokeWidth={2} activeDot={{ r: 8 }} animationDuration={1500} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                        <div className="mt-4 text-center">
+                          <p className="text-xl font-bold text-gray-800">
+                            NPS CX Final Projetado: <span className="text-red-800">{npsProjectionData[npsProjectionData.length - 1]?.npsCx}%</span>
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+                  <TabsContent value="inverse" className="mt-4">
+                    <h3 className="text-2xl font-semibold mb-4 text-gray-800">Cálculo Inverso (Meta de NPS 95)</h3>
+                    <p className="text-gray-600 mb-6">
+                      Informe o volume total de notas que você espera obter por mês para ver a distribuição necessária para alcançar um NPS de 95.
+                    </p>
+                    <div className="flex items-end space-x-4 mb-6 p-4 bg-gray-50 border rounded-lg">
+                      <div className="flex-grow">
+                        <Label htmlFor="total-notas" className="text-base">Volume Total de Notas por Mês</Label>
+                        <Input
+                          id="total-notas"
+                          type="number"
+                          value={totalNotas}
+                          onChange={(e) => setTotalNotas(parseInt(e.target.value, 10) || 0)}
+                          className="mt-2 text-center"
+                        />
+                      </div>
+                      <Button onClick={handleInverseCalculation} className="bg-green-600 hover:bg-green-700 text-white shadow-lg">
+                        Calcular Meta Mensal
+                      </Button>
+                    </div>
+                    {inverseResults.length > 0 && (
+                      <Card className="bg-green-50 border-green-200">
+                        <CardHeader>
+                          <CardTitle className="text-xl">Resultados para a Meta de NPS 95</CardTitle>
+                          <CardDescription>
+                            A meta é um NPS de 95. Os valores abaixo indicam a distribuição necessária de feedback.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                              <thead>
+                                <tr className="bg-green-500 text-white">
+                                  <th className="p-3">Mês</th>
+                                  <th className="p-3">Total Notas</th>
+                                  <th className="p-3">Promotores</th>
+                                  <th className="p-3">Detratores</th>
+                                  <th className="p-3">Neutros</th>
+                                  <th className="p-3">NPS Calculado</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {inverseResults.map((result, index) => (
+                                  <tr key={index} className="border-b hover:bg-green-100">
+                                    <td className="p-3 font-medium">{result.month}</td>
+                                    <td className="p-3">{result.totalNotas}</td>
+                                    <td className="p-3">{result.promotores}</td>
+                                    <td className="p-3">{result.detratores}</td>
+                                    <td className="p-3">{result.neutros}</td>
+                                    <td className="p-3 font-bold">{result.npsCalculado}%</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
+          </div>
+        );
+      };
+
+      const rootElement = document.getElementById('root');
+      const root = ReactDOM.createRoot(rootElement);
+      root.render(<App />);
+    };
+  </script>
+</body>
 </html>
